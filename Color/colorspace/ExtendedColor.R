@@ -35,12 +35,12 @@ AssignDistinctColor = function(ident_vector, exclude_color = NULL){
 
 # 2024-05-03
 # V2 assign color for all ident first then distribute to avoid same color
-DistinctColorListFromTable <- function(df, assigned_colors = NULL) {
+DistinctColorListFromTable <- function(df, assigned_colors = NULL, exclude_color = NULL) {
   columns_use <- colnames(df)
   ident_list <- purrr::map(columns_use, ~as.character(unique(df[[.x]])))
   flat_ident <- purrr::reduce(ident_list, union)
   ident_need_colors <- setdiff(flat_ident, names(assigned_colors))
-  color_map <- c(AssignDistinctColor(ident_need_colors, exclude_color = assigned_colors), assigned_colors)
+  color_map <- c(AssignDistinctColor(ident_need_colors, exclude_color = c(unlist(assigned_colors), exclude_color)), assigned_colors)
   
   result_list <- purrr::map(ident_list, ~{
     colors <- sapply(.x, function(cell) if (cell %in% names(color_map)) color_map[cell] else NA)
@@ -145,7 +145,14 @@ scPalette <- function(n) {
 }
 
 AssignDistinctScPalette = function(ident_vector, exclude_color = NULL){
+  # generate a color palette
     col = scPalette(length(unique(ident_vector)))
+  # exclude color, rerun with colorRampPalette
+  if(!is.null(exclude_color)){
+    col_remain = setdiff(col, exclude_color)
+    col = grDevices::colorRampPalette(col_remain)(length(unique(ident_vector)))
+  }
+  # set names
     setNames(col, unique(ident_vector))
 }
 
@@ -159,3 +166,4 @@ message("CellChat_theme_opts()")
 message("ggPalette(n)")
 message("scPalette(n)")
 message("AssignDistinctScPalette(ident_vector, exclude_color = NULL)")
+

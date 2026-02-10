@@ -5,6 +5,7 @@ require(scattermore)
 library(patchwork)
 library(ggplot2)
 library(Seurat)
+# library(ggrastr)
 source('/diskmnt/Datasets/Spatial_Transcriptomics/Analysis/Tool/Seurat/Plot/FetchDataFov.R')
 source('/diskmnt/Datasets/Spatial_Transcriptomics/Analysis/Tool/Color/colorspace/ExtendedColor.R')
 
@@ -31,16 +32,44 @@ theme_black = theme(
 		legend.title = element_text(color = 'white'),
 	)
 
-internal_image_plot = function(data, column_use, plot_type = c('ident','feature'), dimension = 800, colors = NULL, pointsize = 2, label = F, repel = T, subtitle = NULL,
+internal_image_plot = function(data, column_use, plot_type = c('ident','feature'), 
+	plot_method = c('scattermore', 'ggrastr'),
+	# scattermore parameter
+	dimension = 2000, 
+	pointsize = 2, 
+	# ggrastr parameter
+	raster_ptsize = 0.1,
+	raster_dpi = 300,
+	raster_scale = 1,
+	# other parameters
+	colors = NULL, label = F, repel = T, subtitle = NULL,
 	split.by = NULL
 ){
 	plot_type = match.arg(plot_type)
 	# Get plot ratio
 	yx_ratio = diff(range(data$y)) / diff(range(data$x))
+
+	# Set up base data plot
+	p = ggplot(data = data, aes(x = x, y = y, color = .data[[column_use]]))
+
+	# Determin which method to plot
+	plot_method = match.arg(plot_method)
+	print(paste0("Plotting method: ", plot_method))
+	if(plot_method == 'scattermore'){
+		message("Using scattermore")
+		# Get pixels ratio
+		dimension_x = dimension
+		dimension_y = dimension * yx_ratio
+		#message("dimension_x: ", dimension_x, " dimension_y: ", dimension_y)
 	
-	p = ggplot(data = data, aes(x = x, y = y, color = .data[[column_use]])) +
-			geom_scattermore(pointsize = pointsize, pixels = c(dimension,dimension)) + 
-			theme_void() +
+	 	p <- p + geom_scattermore(pointsize = pointsize, pixels = c(dimension_x,dimension_y), interpolate = TRUE) 
+	} else {
+		message("Using ggrastr")
+		# Use ggrastr to rasterize the plot
+		p <- p + ggrastr::rasterize(geom_point(size = raster_ptsize), dpi = raster_dpi, scale = raster_scale)
+	} 
+	# Set theme
+	p <- p + theme_void() +
 			labs(title = column_use, subtitle = subtitle) + 
 			# set ratio
 			#theme(aspect.ratio = yx_ratio) +
@@ -50,13 +79,16 @@ internal_image_plot = function(data, column_use, plot_type = c('ident','feature'
 				plot.title = element_text(face = "bold", hjust = 0.5),
 				plot.subtitle = element_text(hjust = 0.5)
 				) 
+	
 	# label with text 
 	if(label){
 		# Calculate center per identity
 		center_position_data = data %>% group_by(.data[[column_use]]) %>% summarize(x = mean(x), y = mean(y))
 		if(repel){
 			message("Repel")
-			p = p + ggrepel::geom_label_repel(data = center_position_data, aes(label = .data[[column_use]], fill = .data[[column_use]]), size = 3, color = 'gray10', max.overlaps = Inf)
+			# p = p + ggrepel::geom_label_repel(data = center_position_data, aes(label = .data[[column_use]], fill = .data[[column_use]]), size = 3, color = 'gray10', max.overlaps = Inf)
+		 	# No fill just tex
+			p = p + ggrepel::geom_text_repel(data = center_position_data, aes(label = .data[[column_use]]), size = 3, color = 'gray10', max.overlaps = Inf)
 		}else{
 			p = p + geom_text(data = center_position_data, aes(label = .data[[column_use]]), size = 3)
 		}
@@ -97,13 +129,22 @@ internal_cut_values = function(values, cuts_max = 'q100', cuts_min = 'q0', remov
 # Faster image plot
 ImagePlotFaster = function(obj, group.by = NULL, features = NULL, split.by = NULL,
 	max.cutoff = "q90", min.cutoff = "q0", 
-	feature_palette = NULL, dimension = 1600, fov = NULL,
+	feature_palette = NULL,  fov = NULL,
 	black_theme = TRUE,
 	groupby_palette = list(),
 	nrow = NULL,
-	pointsize = 2,
+	plot_method = c('scattermore', 'ggrastr'),
+	# scattermore parameter
+	dimension = 2000, 
+	pointsize = 2, 
+	# ggrastr parameter
+	raster_ptsize = 0.05,
+	raster_dpi = 300,
+	raster_scale = 1,
+	# other parameters
 	label = F, repel = T,
-	sort = T
+	sort = T,
+	flip_y = FALSE
 	){
 
 	# Get data
@@ -124,7 +165,15 @@ ImagePlotFaster = function(obj, group.by = NULL, features = NULL, split.by = NUL
 			meta_use = meta_use %>% filter(!is.na(.data[[group_by_use]]))
 			# make sure all groupby value are discrete
 			meta_use = meta_use %>% mutate({{group_by_use}} := as.factor(.data[[group_by_use]]))
-			internal_image_plot(meta_use, group_by_use, plot_type = 'ident',dimension = dimension, colors = cols_use, pointsize = pointsize, label = label, repel = repel, subtitle = fov, split.by=split.by)
+			internal_image_plot(meta_use, group_by_use, plot_type = 'ident',
+				plot_method = plot_method,
+				dimension = dimension, 
+				pointsize = pointsize, 
+				raster_ptsize = raster_ptsize,
+				raster_dpi = raster_dpi,
+				raster_scale = raster_scale,
+				colors = cols_use, 
+				label = label, repel = repel, subtitle = fov, split.by=split.by)
 		})
 	}
 
@@ -142,7 +191,15 @@ ImagePlotFaster = function(obj, group.by = NULL, features = NULL, split.by = NUL
 			meta_use = meta_use %>% filter(!is.na(.data[[feature_use]]))
 			# sort values
 			if(sort) meta_use = meta_use %>% arrange(desc({{feature_use}}))
-			internal_image_plot(meta_use, feature_use, plot_type = 'feature', dimension = dimension, colors = feature_palette, pointsize = pointsize, subtitle = fov, split.by=split.by)
+			internal_image_plot(meta_use, feature_use, plot_type = 'feature', 
+				plot_method = plot_method,
+				dimension = dimension, 
+				pointsize = pointsize, 
+				raster_ptsize = raster_ptsize,
+				raster_dpi = raster_dpi,
+				raster_scale = raster_scale,
+				colors = feature_palette, 
+				subtitle = fov, split.by=split.by)
 		})
 	}
 	
@@ -151,13 +208,15 @@ ImagePlotFaster = function(obj, group.by = NULL, features = NULL, split.by = NUL
 	# Combine plot
 	p = wrap_plots(p_all, nrow = nrow)
 	if(black_theme) p = p & theme_black
+	# flip y
+	if(flip_y) p <- p & scale_y_reverse()
 	return(p)
 }
 
 # Plot All Fov
 ImagePlotFasterAllFOV = function(obj, group.by = NULL, features = NULL, split.by = NULL,
 	max.cutoff = "q90", min.cutoff = "q0", 
-	feature_palette = NULL, dimension = 1600, 
+	feature_palette = NULL, dimension = 2000, 
 	combine = T,
 	pointsize = 2, label = FALSE,
 	nrow = NULL, black_theme = TRUE,
@@ -186,7 +245,7 @@ ImagePlotFasterAllFOV = function(obj, group.by = NULL, features = NULL, split.by
 # Plot All Features with same scale
 ImagePlotFasterAllFOVSameScale = function(obj, feature = NULL, split.by = NULL,
 	max.cutoff = "q90", min.cutoff = "q0", 
-	feature_palette = NULL, dimension = 1600, 
+	feature_palette = NULL, dimension = 2000, 
 	pointsize = 2, label = FALSE,
 	nrow = NULL, black_theme = TRUE,
 	groupby_palette = list()
@@ -260,7 +319,7 @@ FetchDataDim <- function(obj_func, values = NULL, reduction_use = NULL){
 # Faster image plot
 DimPlotFaster = function(obj_func, group.by = NULL, features = NULL, split.by = NULL,
 	max.cutoff = "q90", min.cutoff = "q0", 
-	feature_palette = NULL, dimension = 800, fov = NULL,
+	feature_palette = NULL, dimension = 2000, fov = NULL,
 	black_theme = TRUE,
 	groupby_palette = list(),
 	nrow = NULL,
@@ -320,28 +379,18 @@ DimPlotFaster = function(obj_func, group.by = NULL, features = NULL, split.by = 
 
 ## For spatial And DimPlot
 ImageDimComboPlotFaster <- function(obj_func, group.by = NULL, features = NULL, split.by = NULL,
-	nrow = NULL, ncol = NULL, black_theme = TRUE, ...
+	nrow = NULL, ncol = NULL, black_theme = TRUE, flip_y = FALSE, reduction_use = NULL, ...
 	){
 	# if nrow not set, decided by number of values to plot. >1 values, nrow = 2
 	if(is.null(nrow)) nrow = ifelse(length(group.by) + length(features) > 1, 2, 1); message("nrow: ", nrow)
 	p_dim = DimPlotFaster(obj_func, group.by = group.by, 
-			features = features, split.by = split.by, nrow = 1, ...
+			features = features, split.by = split.by, nrow = 1, reduction_use=reduction_use,...
 			)
 	p_image = ImagePlotFaster(obj_func, group.by = group.by,
-			features = features, split.by = split.by, nrow = 1, ...
+			features = features, split.by = split.by, nrow = 1, flip_y=flip_y, ...
 			)
 	p_all = wrap_plots(list(p_dim, p_image), nrow = nrow, ncol = ncol)
 	if(black_theme) p_all = p_all & theme_black
 	return(p_all)
 }
 
-# ImageDimComboPlotFaster <- function(obj_func, group.by = NULL, features = NULL, nrow = NULL, ncol = NULL, ...){
-# 	pdim <- map(group.by, ~{
-# 		message(.x)
-# 		ImageDimComboPlotFasterSingle(obj_func, group.by = .x, features = NULL, ...)
-# 	})
-# 	pfeature <- map(features, ~{
-# 		ImageDimComboPlotFasterSingle(obj_func, group.by = NULL, features = .x, ...)
-# 	})
-# 	wrap_plots(c(pdim, pfeature), nrow = nrow, ncol = ncol)
-# }

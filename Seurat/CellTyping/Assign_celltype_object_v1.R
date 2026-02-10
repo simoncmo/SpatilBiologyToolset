@@ -10,7 +10,7 @@ library(qs)
 
 # Take meta data, celltype assignment file, id_column, cluster_column, and output path
 options <- list(
-    make_option(c("-m", "--meta"), type="character", default=NULL,
+    make_option(c("-m", "--meta"), type="character", default="",
         help="Input seurat meta. If provided will not use the object since much faster "),
     make_option(c("-j", "--object"), type="character", default=NULL,
         help="Input seurat object"),
@@ -46,7 +46,7 @@ cluster_column = opt$cluster_column
 output_dir = opt$output
 
 # Read meta data
-if(!is.null(opt$meta)){
+if(file.exists(opt$meta)){
     message('Reading meta')
     meta = read_tsv(opt$meta) 
 
